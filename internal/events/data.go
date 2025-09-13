@@ -1,0 +1,82 @@
+package events
+
+import (
+	"time"
+
+	"github.com/google/uuid"
+	"github.com/rezbow/tickr/internal/entities"
+	"github.com/rezbow/tickr/internal/utils"
+)
+
+func EventToEventRepr(e *entities.Event) EventRepr {
+	return EventRepr{
+		ID:          e.ID,
+		Title:       e.Title,
+		Description: e.Description.String,
+		Venue:       e.Venue,
+		UserId:      e.UserId,
+		StartTime:   e.StartTime,
+		EndTime:     e.EndTime,
+		CreatedAt:   e.CreatedAt,
+		UpdatedAt:   e.UpdatedAt,
+	}
+}
+
+func EventsToRepr(events []entities.Event) []EventRepr {
+	reprs := make([]EventRepr, len(events))
+	for i, e := range events {
+		reprs[i] = EventToEventRepr(&e)
+	}
+	return reprs
+}
+
+// event representation
+
+type EventRepr struct {
+	ID          uuid.UUID `json:"id"`
+	Title       string    `json:"title"`
+	Description string    `json:"description,omitempty"`
+	Venue       string    `json:"venue"`
+	UserId      uuid.UUID `json:"user_id"`
+	StartTime   time.Time `json:"start_time"`
+	EndTime     time.Time `json:"end_time"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
+}
+
+// event input
+type EventInput struct {
+	Title       string    `json:"title" binding:"required"`
+	Description *string   `json:"description"`
+	Venue       string    `json:"venue" binding:"required"`
+	UserId      uuid.UUID `json:"user_id" binding:"required"`
+	StartTime   time.Time `json:"start_time" binding:"required"`
+	EndTime     time.Time `json:"end_time" binding:"required"`
+}
+
+// update user input
+type EventUpdateInput struct {
+	Name     *string `json:"name"`
+	Email    *string `json:"email"`
+	Password *string `json:"password"`
+	Role     *string `json:"role"`
+}
+
+func (e *EventInput) Validate() utils.ValidationErrors {
+	validator := utils.NewValidator()
+
+	validator.Must(len(e.Title) >= 2 && len(e.Title) <= 255, "title", "title must be between 2 and 255 characters")
+	if e.Description != nil {
+		validator.Must(len(*e.Description) >= 2 && len(*e.Description) <= 1024, "description", "title must be between 2 and 1024 characters")
+	}
+	validator.Must(len(e.Venue) >= 2 && len(e.Venue) <= 255, "title", "title must be between 2 and 255 characters")
+	// start time, end time
+	validator.Must(e.StartTime.After(time.Now()), "start_time", "start_time should be in future")
+	validator.Must(e.EndTime.After(time.Now()), "end_time", "end_time should be in future")
+	validator.Must(e.EndTime.After(e.StartTime), "end_time", "end_time should be after start_time ")
+
+	if !validator.Valid() {
+		return validator.Errors
+	}
+	return nil
+}

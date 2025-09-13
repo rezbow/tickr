@@ -8,6 +8,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"github.com/rezbow/tickr/internal/entities"
 	"gorm.io/gorm"
 )
 
@@ -29,7 +30,7 @@ func (service *UsersService) CreateUserHandler(c *gin.Context) {
 		return
 	}
 
-	user := &User{
+	user := &entities.User{
 		Name:         userInput.Name,
 		Email:        userInput.Email,
 		Role:         userInput.Role,
@@ -56,7 +57,7 @@ func (service *UsersService) DeleteUserHandler(c *gin.Context) {
 	}
 
 	if err := service.deleteUser(c.Request.Context(), userID); err != nil {
-		if errors.Is(err, UserRecordNotFound) {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
 		} else {
 			service.logger.Error("failed to delete user", "userId", userID.String(), "error", err)
@@ -121,11 +122,11 @@ func (service *UsersService) GetUsersHandler(c *gin.Context) {
 	}
 
 	var response struct {
-		Data      []User `json:"data"`
-		Page      int    `json:"page"`
-		Limit     int    `json:"limit"`
-		Total     int64  `json:"total"`
-		TotalPage int    `json:"total_page"`
+		Data      []entities.User `json:"data"`
+		Page      int             `json:"page"`
+		Limit     int             `json:"limit"`
+		Total     int64           `json:"total"`
+		TotalPage int             `json:"total_page"`
 	}
 	response.Data = users
 	response.Page = page
