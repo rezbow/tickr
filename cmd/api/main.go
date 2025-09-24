@@ -8,6 +8,8 @@ import (
 	"github.com/joho/godotenv"
 	"github.com/rezbow/tickr/internal/database"
 	"github.com/rezbow/tickr/internal/events"
+	"github.com/rezbow/tickr/internal/payment"
+	"github.com/rezbow/tickr/internal/tickets"
 	"github.com/rezbow/tickr/internal/users"
 )
 
@@ -25,6 +27,8 @@ func main() {
 	db := database.SetupDatabase(dsn)
 	userService := users.NewUserService(db, logger)
 	eventsService := events.NewEventsService(db, logger)
+	ticketService := tickets.NewTicketsService(db, logger)
+	paymentService := payment.NewPaymentService(db, logger)
 
 	engine := gin.Default()
 	// users
@@ -38,9 +42,16 @@ func main() {
 	engine.GET("/events/:id", eventsService.GetEventHandler)
 	engine.GET("/events", eventsService.GetEventsHandler)
 	engine.DELETE("/events/:id", eventsService.DeleteEventHandler)
-	engine.PUT("/events/:id", eventsService.UpdateEventHandler)
+	// engine.PUT("/events/:id", eventsService.UpdateEventHandler)
+	engine.GET("/events/:id/tickets", ticketService.GetEventTicketsHandler)
+	// engine.POST("/events/:id/tickets", ticketService.CreateTicketForEvent)
 
-	engine.GET("/events/:id/tickets", eventsService.GetEventTicketsHandler)
+	engine.POST("/tickets", ticketService.CreateTicket)
+	engine.GET("/tickets/:id", ticketService.GetTicket)
+	engine.DELETE("/tickets/:id", ticketService.DeleteTicket)
 
+	engine.POST("/payments", paymentService.BuyTicketHandler)
+	engine.GET("/payments/:id", paymentService.GetPaymentHandler)
+	// / purchases
 	engine.Run(":8080")
 }

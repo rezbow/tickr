@@ -1,15 +1,13 @@
 -- +goose Up
-CREATE TABLE events (
+CREATE TABLE payment (
 	id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-	title VARCHAR(255) NOT NULL,
-	description TEXT ,
-	venue TEXT NOT NULL ,
 	user_id UUID REFERENCES users(id) ON DELETE CASCADE,
-	start_time TIMESTAMP NOT NULL,
-	end_time TIMESTAMP NOT NULL,
+	ticket_id UUID REFERENCES tickets(id) ON DELETE CASCADE,
+	quantity INT NOT NULL,
+	paid_amount BIGINT NOT NULL,
 	created_at TIMESTAMP NOT NULL DEFAULT NOW(),
 	updated_at TIMESTAMP NOT NULL DEFAULT NOW()
 );
 
 -- +goose Down
-DROP TABLE IF EXISTS events;
+DROP TABLE IF EXISTS payment;

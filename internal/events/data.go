@@ -80,3 +80,16 @@ func (e *EventInput) Validate() utils.ValidationErrors {
 	}
 	return nil
 }
+
+type TicketInput struct {
+	EventId         uuid.UUID `json:"event_id" binding:"required"`
+	Price           int       `json:"price" binding:"required"`
+	TotalQuantities int       `json:"total_quantities" binding:"required"`
+}
+
+func (t *TicketInput) Validate() utils.ValidationErrors {
+	v := utils.NewValidator()
+	v.Must(t.Price > 0, "price", "must be positive integer")
+	v.Must(t.TotalQuantities > 0, "total_quantities", "must be positive integer")
+	return v.Errors
+}

@@ -47,15 +47,3 @@ func (service *EventsService) getEvents(ctx context.Context, page, limit int) ([
 	}
 	return users, total, nil
 }
-
-func (service *EventsService) getEventTickets(ctx context.Context, eventId uuid.UUID, page, limit int) ([]entities.Ticket, int64, error) {
-	var total int64
-	if res := service.db.Model(&entities.Ticket{}).Where("event_id", eventId).Count(&total); res.Error != nil {
-		return nil, 0, res.Error
-	}
-	tickets, err := gorm.G[entities.Ticket](service.db).Where("event_id", eventId).Offset((page - 1) * limit).Limit(limit).Find(ctx)
-	if err != nil {
-		return nil, 0, err
-	}
-	return tickets, total, nil
-}
