@@ -5,6 +5,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/rezbow/tickr/internal/entities"
+	"github.com/rezbow/tickr/internal/utils"
 	"gorm.io/gorm"
 )
 
@@ -36,12 +37,13 @@ func (service *TicketsService) deleteTicket(ctx context.Context, id uuid.UUID) e
 	return nil
 }
 
-func (service *TicketsService) getEventTickets(ctx context.Context, eventId uuid.UUID, page, limit int) ([]entities.Ticket, int64, error) {
+func (service *TicketsService) getEventTickets(ctx context.Context, eventId uuid.UUID, p *utils.Pagination) ([]entities.Ticket, int64, error) {
 	var total int64
 	if res := service.db.Model(&entities.Ticket{}).Where("event_id", eventId).Count(&total); res.Error != nil {
 		return nil, 0, res.Error
 	}
-	tickets, err := gorm.G[entities.Ticket](service.db).Where("event_id", eventId).Offset((page - 1) * limit).Limit(limit).Find(ctx)
+	var tickets []entities.Ticket
+	err := service.db.Scopes(p.Paginate).Where("event_id", eventId).Find(&tickets).Error
 	if err != nil {
 		return nil, 0, err
 	}

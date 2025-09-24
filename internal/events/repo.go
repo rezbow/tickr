@@ -5,6 +5,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/rezbow/tickr/internal/entities"
+	"github.com/rezbow/tickr/internal/utils"
 	"gorm.io/gorm"
 )
 
@@ -36,14 +37,15 @@ func (service *EventsService) deleteEvent(ctx context.Context, eventId uuid.UUID
 	return nil
 }
 
-func (service *EventsService) getEvents(ctx context.Context, page, limit int) ([]entities.Event, int64, error) {
+func (service *EventsService) getEvents(ctx context.Context, p *utils.Pagination) ([]entities.Event, int64, error) {
 	var total int64
 	if res := service.db.Model(&entities.Event{}).Count(&total); res.Error != nil {
 		return nil, 0, res.Error
 	}
-	users, err := gorm.G[entities.Event](service.db).Offset((page - 1) * limit).Limit(limit).Find(ctx)
+	var events []entities.Event
+	err := service.db.Scopes(p.Paginate).Find(&events).Error
 	if err != nil {
 		return nil, 0, err
 	}
-	return users, total, nil
+	return events, total, nil
 }

@@ -2,13 +2,12 @@ package tickets
 
 import (
 	"errors"
-	"math"
 	"net/http"
-	"strconv"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/rezbow/tickr/internal/entities"
+	"github.com/rezbow/tickr/internal/utils"
 	"gorm.io/gorm"
 )
 
@@ -82,11 +81,11 @@ func (service *TicketsService) DeleteTicket(c *gin.Context) {
 }
 
 func (service *TicketsService) GetEventTicketsHandler(c *gin.Context) {
-	var (
-		page  int
-		limit int
-		err   error
-	)
+	var p utils.Pagination
+	if err := c.ShouldBindQuery(&p); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid pagination parameters"})
+		return
+	}
 
 	id := c.Param("id")
 	eventId, err := uuid.Parse(id)
@@ -95,39 +94,19 @@ func (service *TicketsService) GetEventTicketsHandler(c *gin.Context) {
 		return
 	}
 
-	pageStr := c.Query("page")
-	limitStr := c.Query("limit")
-
-	page, err = strconv.Atoi(pageStr)
-	if page <= 0 || err != nil {
-		page = 1
-	}
-	limit, err = strconv.Atoi(limitStr)
-	if limit <= 0 || err != nil {
-		limit = 10
-	}
-
-	tickets, total, err := service.getEventTickets(c.Request.Context(), eventId, page, limit)
+	tickets, total, err := service.getEventTickets(c.Request.Context(), eventId, &p)
 	if err != nil {
-		service.logger.Error("failed to get users", "page", page, "limit", limit, "error", err)
+		service.logger.Error("failed to get users", "page", p.Page, "limit", p.PageSize, "error", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
-	var response struct {
-		Data      []entities.Ticket `json:"data"`
-		Page      int               `json:"page"`
-		Limit     int               `json:"limit"`
-		Total     int64             `json:"total"`
-		TotalPage int               `json:"total_page"`
-	}
-
-	response.Data = tickets
-	response.Page = page
-	response.Limit = limit
-	response.Total = total
-	response.TotalPage = int(math.Ceil(float64(total) / float64(limit)))
-	c.JSON(http.StatusOK, response)
+	c.JSON(http.StatusOK, gin.H{
+		"data":      tickets,
+		"total":     total,
+		"page":      p.Page,
+		"page_size": p.PageSize,
+	})
 }
 
 /*

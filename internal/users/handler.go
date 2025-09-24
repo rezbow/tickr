@@ -2,13 +2,12 @@ package users
 
 import (
 	"errors"
-	"math"
 	"net/http"
-	"strconv"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/rezbow/tickr/internal/entities"
+	"github.com/rezbow/tickr/internal/utils"
 	"gorm.io/gorm"
 )
 
@@ -96,44 +95,25 @@ func (service *UsersService) GetUserHandler(c *gin.Context) {
 
 // getUsers: get all users with pagination
 func (service *UsersService) GetUsersHandler(c *gin.Context) {
-	var (
-		page  int
-		limit int
-		err   error
-	)
+	var p utils.Pagination
 
-	pageStr := c.Query("page")
-	limitStr := c.Query("limit")
-
-	page, err = strconv.Atoi(pageStr)
-	if page <= 0 || err != nil {
-		page = 1
-	}
-	limit, err = strconv.Atoi(limitStr)
-	if limit <= 0 || err != nil {
-		limit = 10
-	}
-
-	users, total, err := service.getUsers(c.Request.Context(), page, limit)
-	if err != nil {
-		service.logger.Error("failed to get users", "page", page, "limit", limit, "error", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+	if err := c.ShouldBindQuery(&p); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid pagination parameters"})
 		return
 	}
 
-	var response struct {
-		Data      []entities.User `json:"data"`
-		Page      int             `json:"page"`
-		Limit     int             `json:"limit"`
-		Total     int64           `json:"total"`
-		TotalPage int             `json:"total_page"`
+	users, total, err := service.getUsers(c.Request.Context(), &p)
+	if err != nil {
+		service.logger.Error("failed to get users", "page", p.Page, "page_size", p.PageSize, "error", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
 	}
-	response.Data = users
-	response.Page = page
-	response.Limit = limit
-	response.Total = total
-	response.TotalPage = int(math.Ceil(float64(total) / float64(limit)))
-	c.JSON(http.StatusOK, response)
+	c.JSON(http.StatusOK, gin.H{
+		"data":      users,
+		"total":     total,
+		"page":      p.Page,
+		"page_size": p.PageSize,
+	})
 }
 
 func (service *UsersService) UpdateUserHander(c *gin.Context) {

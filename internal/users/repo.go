@@ -5,6 +5,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/rezbow/tickr/internal/entities"
+	"github.com/rezbow/tickr/internal/utils"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -39,12 +40,13 @@ func (service *UsersService) getUser(ctx context.Context, userID uuid.UUID) (*en
 }
 
 // getUsers: retrieves a list of users from the database.
-func (service *UsersService) getUsers(ctx context.Context, page, limit int) ([]entities.User, int64, error) {
+func (service *UsersService) getUsers(ctx context.Context, p *utils.Pagination) ([]entities.User, int64, error) {
 	var total int64
 	if res := service.db.Model(&entities.User{}).Count(&total); res.Error != nil {
 		return nil, 0, res.Error
 	}
-	users, err := gorm.G[entities.User](service.db).Offset((page - 1) * limit).Limit(limit).Find(ctx)
+	var users []entities.User
+	err := service.db.Scopes(p.Paginate).Find(&users).Error
 	if err != nil {
 		return nil, 0, err
 	}
