@@ -107,16 +107,16 @@ func (service *UsersService) updateUserAtomic(userID uuid.UUID, updatedUser map[
 		}
 	}()
 	var user entities.User
-	if res := service.db.Model(&entities.User{}).Clauses(clause.Locking{Strength: "UPDATE"}).First(&user, userID); res.Error != nil {
+    if res := tx.Model(&entities.User{}).Clauses(clause.Locking{Strength: "UPDATE"}).First(&user, userID); res.Error != nil {
 		tx.Rollback()
 		return nil, res.Error
 	}
-	if res := service.db.Model(user).Updates(updatedUser); res.Error != nil {
+    if res := tx.Model(&user).Updates(updatedUser); res.Error != nil {
 		tx.Rollback()
 		return nil, res.Error
 	}
 
-	if err := service.db.Model(&entities.User{}).First(&user, userID).Error; err != nil {
+	if err := tx.Model(&entities.User{}).First(&user, userID).Error; err != nil {
 		tx.Rollback()
 		return nil, err
 	}

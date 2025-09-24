@@ -4,7 +4,7 @@ CREATE TABLE payment (
 	user_id UUID REFERENCES users(id) ON DELETE CASCADE,
 	ticket_id UUID REFERENCES tickets(id) ON DELETE CASCADE,
 	quantity INT NOT NULL,
-	paid_amount BIGINT NOT NULL,
+    paid_amount BIGINT NOT NULL,
 	created_at TIMESTAMP NOT NULL DEFAULT NOW(),
 	updated_at TIMESTAMP NOT NULL DEFAULT NOW()
 );

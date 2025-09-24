@@ -64,8 +64,8 @@ func (service *UsersService) DeleteUserHandler(c *gin.Context) {
 		}
 		return
 	}
-	service.logger.Info("user deleted", "userId", userID.String())
-	c.JSON(http.StatusNoContent, nil)
+    service.logger.Info("user deleted", "userId", userID.String())
+    c.Status(http.StatusNoContent)
 }
 
 func (service *UsersService) GetUserHandler(c *gin.Context) {

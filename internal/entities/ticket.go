@@ -10,7 +10,7 @@ import (
 type Ticket struct {
 	ID                  uuid.UUID
 	EventId             uuid.UUID
-	Price               int
+	Price               int64
 	TotalQuantities     int
 	RemainingQuantities int
 	CreatedAt           time.Time

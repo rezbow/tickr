@@ -56,18 +56,18 @@ func (service *PaymentService) BuyTicketHandler(c *gin.Context) {
 		}
 
 		ticket.RemainingQuantities -= paymentDetail.Quantity
-		if err := service.db.Save(&ticket).Error; err != nil {
+		if err := tx.Save(&ticket).Error; err != nil {
 			return err
 		}
 
-		payment := entities.Payment{
+        payment := entities.Payment{
 			ID:         uuid.New(),
 			UserId:     paymentDetail.UserId,
 			TicketId:   paymentDetail.TicketId,
 			Quantity:   paymentDetail.Quantity,
-			PaidAmount: paymentDetail.Quantity * ticket.Price,
+			PaidAmount: int64(paymentDetail.Quantity) * ticket.Price,
 		}
-		if err := service.db.Create(&payment).Error; err != nil {
+		if err := tx.Create(&payment).Error; err != nil {
 			return err
 		}
 		paymentId = payment.ID

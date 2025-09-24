@@ -73,13 +73,13 @@ func (u *UserUpdateInput) ToMap() (map[string]any, error) {
 	if u.Email != nil {
 		updates["email"] = *u.Email
 	}
-	if u.Password != nil {
-		passwordHash, err := hashPassword(*u.Password)
-		if err != nil {
-			return nil, errors.New("unable to hash the password")
-		}
-		updates["PasswordHash"] = passwordHash
-	}
+    if u.Password != nil {
+        passwordHash, err := hashPassword(*u.Password)
+        if err != nil {
+            return nil, errors.New("unable to hash the password")
+        }
+        updates["password_hash"] = passwordHash
+    }
 	if u.Role != nil {
 		updates["role"] = *u.Role
 	}

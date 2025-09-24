@@ -39,11 +39,11 @@ func (service *TicketsService) deleteTicket(ctx context.Context, id uuid.UUID) e
 
 func (service *TicketsService) getEventTickets(ctx context.Context, eventId uuid.UUID, p *utils.Pagination) ([]entities.Ticket, int64, error) {
 	var total int64
-	if res := service.db.Model(&entities.Ticket{}).Where("event_id", eventId).Count(&total); res.Error != nil {
+	if res := service.db.Model(&entities.Ticket{}).Where("event_id = ?", eventId).Count(&total); res.Error != nil {
 		return nil, 0, res.Error
 	}
-	var tickets []entities.Ticket
-	err := service.db.Scopes(p.Paginate).Where("event_id", eventId).Find(&tickets).Error
+    var tickets []entities.Ticket
+    err := service.db.Scopes(p.Paginate).Where("event_id = ?", eventId).Find(&tickets).Error
 	if err != nil {
 		return nil, 0, err
 	}

@@ -8,16 +8,16 @@ import (
 
 type TicketInput struct {
 	EventId         uuid.UUID `json:"event_id" binding:"required"`
-	Price           int       `json:"price" binding:"required"`
+	Price           int64       `json:"price" binding:"required"`
 	TotalQuantities int       `json:"total_quantities" binding:"required"`
 }
 
 type Ticket struct {
 	ID                 uuid.UUID `json:"id"`
 	EventId            uuid.UUID `json:"event_id"`
-	Price              int       `json:"price"`
-	TotalQuantites     int       `json:"total_quantity"`
-	RemainingQuantites int       `json:"remaining_quantity"`
+	Price              int64       `json:"price"`
+    TotalQuantities    int       `json:"total_quantities"`
+    RemainingQuantities int      `json:"remaining_quantities"`
 }
 
 func TicketEntityToTicket(t *entities.Ticket) Ticket {
@@ -25,8 +25,8 @@ func TicketEntityToTicket(t *entities.Ticket) Ticket {
 		ID:                 t.ID,
 		EventId:            t.EventId,
 		Price:              t.Price,
-		TotalQuantites:     t.TotalQuantities,
-		RemainingQuantites: t.RemainingQuantities,
+        TotalQuantities:    t.TotalQuantities,
+        RemainingQuantities: t.RemainingQuantities,
 	}
 }
 

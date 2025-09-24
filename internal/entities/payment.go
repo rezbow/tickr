@@ -11,7 +11,7 @@ type Payment struct {
 	UserId     uuid.UUID
 	TicketId   uuid.UUID
 	Quantity   int
-	PaidAmount int
+    PaidAmount int64
 	CreatedAt  time.Time
 	UpdatedAt  time.Time
 	// associations

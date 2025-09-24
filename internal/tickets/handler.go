@@ -27,6 +27,7 @@ func (service *TicketsService) CreateTicket(c *gin.Context) {
 		EventId:         input.EventId,
 		Price:           input.Price,
 		TotalQuantities: input.TotalQuantities,
+		RemainingQuantities: input.TotalQuantities,
 	}
 
 	if err := service.createTicket(c.Request.Context(), &ticket); err != nil {
@@ -128,10 +129,11 @@ func (service *TicketsService) CreateTicketForEvent(c *gin.Context) {
 		return
 	}
 
-	ticket := entities.Ticket{
+    ticket := entities.Ticket{
 		EventId:         input.EventId,
 		Price:           input.Price,
-		TotalQuantities: input.TotalQuantities,
+        TotalQuantities: input.TotalQuantities,
+        RemainingQuantities: input.TotalQuantities,
 	}
 
 	if err := service.createTicket(c.Request.Context(), &ticket); err != nil {

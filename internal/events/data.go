@@ -54,12 +54,13 @@ type EventInput struct {
 	EndTime     time.Time `json:"end_time" binding:"required"`
 }
 
-// update user input
+// update event input
 type EventUpdateInput struct {
-	Name     *string `json:"name"`
-	Email    *string `json:"email"`
-	Password *string `json:"password"`
-	Role     *string `json:"role"`
+    Title       *string   `json:"title"`
+    Description *string   `json:"description"`
+    Venue       *string   `json:"venue"`
+    StartTime   *time.Time `json:"start_time"`
+    EndTime     *time.Time `json:"end_time"`
 }
 
 func (e *EventInput) Validate() utils.ValidationErrors {

@@ -16,7 +16,7 @@ type Payment struct {
 	ID       uuid.UUID `json:"id"`
 	UserId   uuid.UUID `json:"user_id"`
 	Ticket   uuid.UUID `json:"ticket_id"`
-	Quantity int       `json:"quantity"`
+    Quantity int       `json:"quantity"`
 }
 
 func PaymentEntityToPayment(p entities.Payment) Payment {
