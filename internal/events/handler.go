@@ -12,7 +12,7 @@ import (
 )
 
 func (service *EventsService) CreateEventHandler(c *gin.Context) {
-	var input EventInput
+	var input EventCreateDTO
 	if err := c.ShouldBindJSON(&input); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
@@ -46,7 +46,7 @@ func (service *EventsService) CreateEventHandler(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, EventToEventRepr(event))
+	c.JSON(http.StatusOK, EventEntityToEventResponse(event))
 }
 
 func (service *EventsService) GetEventHandler(c *gin.Context) {
@@ -68,7 +68,7 @@ func (service *EventsService) GetEventHandler(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, EventToEventRepr(event))
+	c.JSON(http.StatusOK, EventEntityToEventResponse(event))
 
 }
 
@@ -87,7 +87,7 @@ func (service *EventsService) GetEventsHandler(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{
-		"data":      events,
+		"data":      EventEntitiesToEventResponse(events),
 		"total":     total,
 		"page":      p.Page,
 		"page_size": p.PageSize,
@@ -113,5 +113,5 @@ func (service *EventsService) DeleteEventHandler(c *gin.Context) {
 		return
 	}
 
-    c.Status(http.StatusNoContent)
+	c.Status(http.StatusNoContent)
 }

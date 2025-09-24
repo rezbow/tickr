@@ -8,44 +8,15 @@ import (
 	"github.com/rezbow/tickr/internal/utils"
 )
 
-func EventToEventRepr(e *entities.Event) EventRepr {
-	return EventRepr{
-		ID:          e.ID,
-		Title:       e.Title,
-		Description: e.Description.String,
-		Venue:       e.Venue,
-		UserId:      e.UserId,
-		StartTime:   e.StartTime,
-		EndTime:     e.EndTime,
-		CreatedAt:   e.CreatedAt,
-		UpdatedAt:   e.UpdatedAt,
-	}
-}
-
-func EventsToRepr(events []entities.Event) []EventRepr {
-	reprs := make([]EventRepr, len(events))
+func EventEntitiesToEventResponse(events []entities.Event) []EventResponseDTO {
+	result := make([]EventResponseDTO, len(events))
 	for i, e := range events {
-		reprs[i] = EventToEventRepr(&e)
+		result[i] = EventEntityToEventResponse(&e)
 	}
-	return reprs
+	return result
 }
 
-// event representation
-
-type EventRepr struct {
-	ID          uuid.UUID `json:"id"`
-	Title       string    `json:"title"`
-	Description string    `json:"description,omitempty"`
-	Venue       string    `json:"venue"`
-	UserId      uuid.UUID `json:"user_id"`
-	StartTime   time.Time `json:"start_time"`
-	EndTime     time.Time `json:"end_time"`
-	CreatedAt   time.Time `json:"created_at"`
-	UpdatedAt   time.Time `json:"updated_at"`
-}
-
-// event input
-type EventInput struct {
+type EventCreateDTO struct {
 	Title       string    `json:"title" binding:"required"`
 	Description *string   `json:"description"`
 	Venue       string    `json:"venue" binding:"required"`
@@ -54,16 +25,7 @@ type EventInput struct {
 	EndTime     time.Time `json:"end_time" binding:"required"`
 }
 
-// update event input
-type EventUpdateInput struct {
-    Title       *string   `json:"title"`
-    Description *string   `json:"description"`
-    Venue       *string   `json:"venue"`
-    StartTime   *time.Time `json:"start_time"`
-    EndTime     *time.Time `json:"end_time"`
-}
-
-func (e *EventInput) Validate() utils.ValidationErrors {
+func (e *EventCreateDTO) Validate() utils.ValidationErrors {
 	validator := utils.NewValidator()
 
 	validator.Must(len(e.Title) >= 2 && len(e.Title) <= 255, "title", "title must be between 2 and 255 characters")
@@ -81,6 +43,42 @@ func (e *EventInput) Validate() utils.ValidationErrors {
 	}
 	return nil
 }
+
+type EventUpdateDTO struct {
+	Title       *string    `json:"title"`
+	Description *string    `json:"description"`
+	Venue       *string    `json:"venue"`
+	StartTime   *time.Time `json:"start_time"`
+	EndTime     *time.Time `json:"end_time"`
+}
+
+type EventResponseDTO struct {
+	ID          uuid.UUID `json:"id"`
+	Title       string    `json:"title"`
+	Description string    `json:"description,omitempty"`
+	Venue       string    `json:"venue"`
+	UserId      uuid.UUID `json:"user_id"`
+	StartTime   time.Time `json:"start_time"`
+	EndTime     time.Time `json:"end_time"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
+}
+
+func EventEntityToEventResponse(e *entities.Event) EventResponseDTO {
+	return EventResponseDTO{
+		ID:          e.ID,
+		Title:       e.Title,
+		Description: e.Description.String,
+		Venue:       e.Venue,
+		UserId:      e.UserId,
+		StartTime:   e.StartTime,
+		EndTime:     e.EndTime,
+		CreatedAt:   e.CreatedAt,
+		UpdatedAt:   e.UpdatedAt,
+	}
+}
+
+// -------------------------------------------------------- //
 
 type TicketInput struct {
 	EventId         uuid.UUID `json:"event_id" binding:"required"`
