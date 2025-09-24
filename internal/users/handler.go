@@ -12,7 +12,7 @@ import (
 )
 
 func (service *UsersService) CreateUserHandler(c *gin.Context) {
-	var userInput UserInput
+	var userInput UserCreateDTO
 	if err := c.ShouldBindJSON(&userInput); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
@@ -40,7 +40,7 @@ func (service *UsersService) CreateUserHandler(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusCreated, user)
+	c.JSON(http.StatusCreated, UserEntityToUserResponse(user))
 }
 
 func (service *UsersService) DeleteUserHandler(c *gin.Context) {
@@ -64,8 +64,8 @@ func (service *UsersService) DeleteUserHandler(c *gin.Context) {
 		}
 		return
 	}
-    service.logger.Info("user deleted", "userId", userID.String())
-    c.Status(http.StatusNoContent)
+	service.logger.Info("user deleted", "userId", userID.String())
+	c.Status(http.StatusNoContent)
 }
 
 func (service *UsersService) GetUserHandler(c *gin.Context) {
@@ -90,7 +90,7 @@ func (service *UsersService) GetUserHandler(c *gin.Context) {
 		}
 		return
 	}
-	c.JSON(http.StatusOK, user)
+	c.JSON(http.StatusOK, UserEntityToUserResponse(user))
 }
 
 // getUsers: get all users with pagination
@@ -109,7 +109,7 @@ func (service *UsersService) GetUsersHandler(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{
-		"data":      users,
+		"data":      UserEntitiesToUserResponse(users),
 		"total":     total,
 		"page":      p.Page,
 		"page_size": p.PageSize,
@@ -124,7 +124,7 @@ func (service *UsersService) UpdateUserHander(c *gin.Context) {
 		return
 	}
 
-	var updatedFields UserUpdateInput
+	var updatedFields UserUpdateDTO
 	if err := c.ShouldBindJSON(&updatedFields); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
@@ -151,5 +151,5 @@ func (service *UsersService) UpdateUserHander(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, user)
+	c.JSON(http.StatusOK, UserEntityToUserResponse(user))
 }
