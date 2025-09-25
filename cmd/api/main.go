@@ -6,6 +6,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/joho/godotenv"
+	"github.com/rezbow/tickr/internal/auth"
 	"github.com/rezbow/tickr/internal/database"
 	"github.com/rezbow/tickr/internal/events"
 	"github.com/rezbow/tickr/internal/payment"
@@ -29,29 +30,45 @@ func main() {
 	eventsService := events.NewEventsService(db, logger)
 	ticketService := tickets.NewTicketsService(db, logger)
 	paymentService := payment.NewPaymentService(db, logger)
+	jwtService := auth.NewJWTService()
 
 	engine := gin.Default()
-	// users
+
+	// Public routes (no authentication required)
+	engine.POST("/auth/login", userService.LoginHandler)
+	engine.POST("/auth/refresh", userService.RefreshTokenHandler)
 	engine.POST("/users", userService.CreateUserHandler)
-	engine.DELETE("/users/:id", userService.DeleteUserHandler)
-	engine.GET("/users/:id", userService.GetUserHandler)
-	engine.PUT("/users/:id", userService.UpdateUserHander)
-	engine.GET("/users", userService.GetUsersHandler)
-	// events
-	engine.POST("/events", eventsService.CreateEventHandler)
-	engine.GET("/events/:id", eventsService.GetEventHandler)
 	engine.GET("/events", eventsService.GetEventsHandler)
-	engine.DELETE("/events/:id", eventsService.DeleteEventHandler)
-	// engine.PUT("/events/:id", eventsService.UpdateEventHandler)
+	engine.GET("/events/:id", eventsService.GetEventHandler)
 	engine.GET("/events/:id/tickets", ticketService.GetEventTicketsHandler)
-	// engine.POST("/events/:id/tickets", ticketService.CreateTicketForEvent)
-
-	engine.POST("/tickets", ticketService.CreateTicket)
 	engine.GET("/tickets/:id", ticketService.GetTicket)
-	engine.DELETE("/tickets/:id", ticketService.DeleteTicket)
 
-	engine.POST("/payments", paymentService.BuyTicketHandler)
-	engine.GET("/payments/:id", paymentService.GetPaymentHandler)
-	// / purchases
+	// Protected routes (authentication required)
+	protected := engine.Group("/")
+	protected.Use(auth.AuthMiddleware(jwtService))
+	{
+		// Auth routes
+		protected.POST("/auth/logout", userService.LogoutHandler)
+		protected.GET("/auth/profile", userService.GetProfileHandler)
+
+		// User management (admin only)
+		protected.GET("/users", auth.RequireRole("admin"), userService.GetUsersHandler)
+		protected.GET("/users/:id", auth.RequireRole("admin"), userService.GetUserHandler)
+		protected.DELETE("/users/:id", auth.RequireRole("admin"), userService.DeleteUserHandler)
+		protected.PUT("/users/:id", auth.RequireOwnershipOrRole("admin"), userService.UpdateUserHander)
+
+		// Event management (organizers and admins)
+		protected.POST("/events", auth.RequireRoles([]string{"organizer", "admin"}), eventsService.CreateEventHandler)
+		protected.DELETE("/events/:id", auth.RequireOwnershipOrRole("admin"), eventsService.DeleteEventHandler)
+
+		// Ticket management (organizers and admins)
+		protected.POST("/tickets", auth.RequireRoles([]string{"organizer", "admin"}), ticketService.CreateTicket)
+		protected.DELETE("/tickets/:id", auth.RequireRoles([]string{"organizer", "admin"}), ticketService.DeleteTicket)
+
+		// Payment management (authenticated users)
+		protected.POST("/payments", paymentService.BuyTicketHandler)
+		protected.GET("/payments/:id", paymentService.GetPaymentHandler)
+	}
+
 	engine.Run(":8080")
 }

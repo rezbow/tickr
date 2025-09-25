@@ -81,7 +81,47 @@ func (u *UserUpdateDTO) ToMap() (map[string]any, error) {
 	return updates, nil
 }
 
+type LoginDTO struct {
+	Email    string `json:"email" binding:"required"`
+	Password string `json:"password" binding:"required"`
+}
+
+func (l *LoginDTO) Validate() utils.ValidationErrors {
+	validator := utils.NewValidator()
+	validator.Must(len(l.Email) > 0, "email", "email is required")
+	validator.Must(len(l.Password) > 0, "password", "password is required")
+	validator.Regex(l.Email, regexp.MustCompile(`^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$`), "email", "invalid email format")
+	if !validator.Valid() {
+		return validator.Errors
+	}
+	return nil
+}
+
+type LoginResponseDTO struct {
+	AccessToken  string         `json:"access_token"`
+	RefreshToken string         `json:"refresh_token"`
+	User         UserResponseDTO `json:"user"`
+}
+
+type RefreshTokenDTO struct {
+	RefreshToken string `json:"refresh_token" binding:"required"`
+}
+
+func (r *RefreshTokenDTO) Validate() utils.ValidationErrors {
+	validator := utils.NewValidator()
+	validator.Must(len(r.RefreshToken) > 0, "refresh_token", "refresh token is required")
+	if !validator.Valid() {
+		return validator.Errors
+	}
+	return nil
+}
+
+type RefreshTokenResponseDTO struct {
+	AccessToken string `json:"access_token"`
+}
+
 type UserResponseDTO struct {
+	ID    string `json:"id"`
 	Name  string `json:"name"`
 	Email string `json:"email"`
 	Role  string `json:"role"`
@@ -89,6 +129,7 @@ type UserResponseDTO struct {
 
 func UserEntityToUserResponse(user *entities.User) UserResponseDTO {
 	return UserResponseDTO{
+		ID:    user.ID.String(),
 		Name:  user.Name,
 		Email: user.Email,
 		Role:  user.Role,
@@ -99,6 +140,7 @@ func UserEntitiesToUserResponse(users []entities.User) []UserResponseDTO {
 	userResponses := make([]UserResponseDTO, len(users))
 	for idx, u := range users {
 		userResponses[idx] = UserResponseDTO{
+			ID:    u.ID.String(),
 			Name:  u.Name,
 			Email: u.Email,
 			Role:  u.Role,

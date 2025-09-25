@@ -8,6 +8,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/rezbow/tickr/internal/entities"
 	"github.com/rezbow/tickr/internal/utils"
+	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
 )
 
@@ -151,5 +152,170 @@ func (service *UsersService) UpdateUserHander(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	c.JSON(http.StatusOK, UserEntityToUserResponse(user))
+}
+
+func (service *UsersService) LoginHandler(c *gin.Context) {
+	var loginInput LoginDTO
+	if err := c.ShouldBindJSON(&loginInput); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	if errors := loginInput.Validate(); errors != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"errors": errors})
+		return
+	}
+
+	// Find user by email
+	var user entities.User
+	if err := service.db.Where("email = ?", loginInput.Email).First(&user).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid credentials"})
+		} else {
+			service.logger.Error("failed to find user", "email", loginInput.Email, "error", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Internal server error"})
+		}
+		return
+	}
+
+	// Verify password
+	if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(loginInput.Password)); err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid credentials"})
+		return
+	}
+
+	// Generate JWT access token
+	accessToken, err := service.jwtService.GenerateToken(user.ID, user.Email, user.Role)
+	if err != nil {
+		service.logger.Error("failed to generate access token", "userId", user.ID.String(), "error", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate access token"})
+		return
+	}
+
+	// Generate refresh token
+	refreshTokenString, err := service.jwtService.GenerateRefreshToken()
+	if err != nil {
+		service.logger.Error("failed to generate refresh token", "userId", user.ID.String(), "error", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate refresh token"})
+		return
+	}
+
+	// Store refresh token in database
+	_, err = service.refreshTokenService.CreateRefreshToken(user.ID, refreshTokenString)
+	if err != nil {
+		service.logger.Error("failed to store refresh token", "userId", user.ID.String(), "error", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to store refresh token"})
+		return
+	}
+
+	response := LoginResponseDTO{
+		AccessToken:  accessToken,
+		RefreshToken: refreshTokenString,
+		User:         UserEntityToUserResponse(&user),
+	}
+
+	service.logger.Info("user logged in", "userId", user.ID.String(), "email", user.Email)
+	c.JSON(http.StatusOK, response)
+}
+
+func (service *UsersService) RefreshTokenHandler(c *gin.Context) {
+	var refreshInput RefreshTokenDTO
+	if err := c.ShouldBindJSON(&refreshInput); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	if errors := refreshInput.Validate(); errors != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"errors": errors})
+		return
+	}
+
+	// Get refresh token from database
+	refreshToken, err := service.refreshTokenService.GetRefreshToken(refreshInput.RefreshToken)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid or expired refresh token"})
+		return
+	}
+
+	// Get user information
+	var user entities.User
+	if err := service.db.Where("id = ?", refreshToken.UserID).First(&user).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "User not found"})
+		} else {
+			service.logger.Error("failed to find user", "userId", refreshToken.UserID.String(), "error", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Internal server error"})
+		}
+		return
+	}
+
+	// Generate new access token
+	accessToken, err := service.jwtService.GenerateToken(user.ID, user.Email, user.Role)
+	if err != nil {
+		service.logger.Error("failed to generate access token", "userId", user.ID.String(), "error", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate access token"})
+		return
+	}
+
+	response := RefreshTokenResponseDTO{
+		AccessToken: accessToken,
+	}
+
+	service.logger.Info("access token refreshed", "userId", user.ID.String())
+	c.JSON(http.StatusOK, response)
+}
+
+func (service *UsersService) LogoutHandler(c *gin.Context) {
+	// Get refresh token from request body if provided
+	var logoutInput struct {
+		RefreshToken string `json:"refresh_token"`
+	}
+	
+	if err := c.ShouldBindJSON(&logoutInput); err == nil && logoutInput.RefreshToken != "" {
+		// Invalidate the refresh token
+		if err := service.refreshTokenService.DeleteRefreshToken(logoutInput.RefreshToken); err != nil {
+			service.logger.Error("failed to delete refresh token", "error", err)
+		}
+	}
+	
+	userID, exists := c.Get("user_id")
+	if exists {
+		// Delete all refresh tokens for this user
+		if userUUID, ok := userID.(uuid.UUID); ok {
+			if err := service.refreshTokenService.DeleteAllUserRefreshTokens(userUUID); err != nil {
+				service.logger.Error("failed to delete user refresh tokens", "userId", userUUID.String(), "error", err)
+			}
+		}
+		service.logger.Info("user logged out", "userId", userID)
+	}
+	
+	c.JSON(http.StatusOK, gin.H{"message": "Logged out successfully"})
+}
+
+func (service *UsersService) GetProfileHandler(c *gin.Context) {
+	userID, exists := c.Get("user_id")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "User not authenticated"})
+		return
+	}
+
+	userUUID, ok := userID.(uuid.UUID)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid user ID"})
+		return
+	}
+
+	user, err := service.getUser(c.Request.Context(), userUUID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "User not found"})
+		} else {
+			service.logger.Error("failed to get user profile", "userId", userUUID.String(), "error", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Internal server error"})
+		}
+		return
+	}
+
 	c.JSON(http.StatusOK, UserEntityToUserResponse(user))
 }
