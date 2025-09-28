@@ -8,14 +8,6 @@ import (
 	"gorm.io/gorm"
 )
 
-func (service *PaymentService) createPayment(ctx context.Context, payment *entities.Payment) error {
-	err := gorm.G[entities.Payment](service.db).Create(ctx, payment)
-	if err != nil {
-		return err
-	}
-	return nil
-}
-
 func (service *PaymentService) getPayment(ctx context.Context, paymentId uuid.UUID) (*entities.Payment, error) {
 	payment, err := gorm.G[entities.Payment](service.db).Where("id = ?", paymentId).First(ctx)
 	if err != nil {

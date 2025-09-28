@@ -1,11 +1,13 @@
 package auth
 
 import (
+	"errors"
 	"net/http"
 	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"gorm.io/gorm"
 )
 
 func AuthMiddleware(jwtService *JWTService) gin.HandlerFunc {
@@ -114,6 +116,82 @@ func RequireRoles(requiredRoles []string) gin.HandlerFunc {
 	}
 }
 
+func RequireEntityOwnershipOrRole(db *gorm.DB, entity any, requiredRole string) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		userID, exists := c.Get("user_id")
+		if !exists {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "User ID not found"})
+			c.Abort()
+			return
+		}
+
+		userRole, exists := c.Get("user_role")
+		if !exists {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "User role not found"})
+			c.Abort()
+			return
+		}
+
+		role, ok := userRole.(string)
+		if !ok {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid user role"})
+			c.Abort()
+			return
+		}
+
+		// If user has required role, allow access
+		if hasRequiredRole(role, requiredRole) {
+			c.Next()
+			return
+		}
+
+		// Otherwise, check ownership
+		resourceID := c.Param("id")
+		if resourceID == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Resource ID required"})
+			c.Abort()
+			return
+		}
+
+		resourceUUID, err := uuid.Parse(resourceID)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid resource ID"})
+			c.Abort()
+			return
+		}
+
+		userUUID, ok := userID.(uuid.UUID)
+		if !ok {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid user ID"})
+			c.Abort()
+			return
+		}
+
+		var entityOwner struct {
+			UserId uuid.UUID
+		}
+		if err := db.Model(entity).Select("user_id").Where("id = ?", resourceUUID).First(&entityOwner).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				c.JSON(http.StatusNotFound, gin.H{"error": "not found"})
+				c.Abort()
+				return
+			}
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+			c.Abort()
+			return
+		}
+
+		// Check if user owns the resource
+		if userUUID != entityOwner.UserId {
+			c.JSON(http.StatusForbidden, gin.H{"error": "Access denied: not resource owner"})
+			c.Abort()
+			return
+		}
+
+		c.Next()
+	}
+}
+
 func RequireOwnershipOrRole(requiredRole string) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		userID, exists := c.Get("user_id")
@@ -194,4 +272,3 @@ func hasRequiredRole(userRole, requiredRole string) bool {
 
 	return userLevel >= requiredLevel
 }
-

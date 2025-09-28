@@ -8,6 +8,7 @@ import (
 	"github.com/joho/godotenv"
 	"github.com/rezbow/tickr/internal/auth"
 	"github.com/rezbow/tickr/internal/database"
+	"github.com/rezbow/tickr/internal/entities"
 	"github.com/rezbow/tickr/internal/events"
 	"github.com/rezbow/tickr/internal/payment"
 	"github.com/rezbow/tickr/internal/tickets"
@@ -59,15 +60,16 @@ func main() {
 
 		// Event management (organizers and admins)
 		protected.POST("/events", auth.RequireRoles([]string{"organizer", "admin"}), eventsService.CreateEventHandler)
-		protected.DELETE("/events/:id", auth.RequireOwnershipOrRole("admin"), eventsService.DeleteEventHandler)
+		protected.DELETE("/events/:id", auth.RequireEntityOwnershipOrRole(db, entities.Event{}, "admin"), eventsService.DeleteEventHandler)
+		protected.POST("/events/:id/tickets", auth.RequireEntityOwnershipOrRole(db, entities.Event{}, "admin"), ticketService.CreateTicketHandler)
 
 		// Ticket management (organizers and admins)
-		protected.POST("/tickets", auth.RequireRoles([]string{"organizer", "admin"}), ticketService.CreateTicket)
-		protected.DELETE("/tickets/:id", auth.RequireRoles([]string{"organizer", "admin"}), ticketService.DeleteTicket)
+		protected.DELETE("/tickets/:id", auth.RequireEntityOwnershipOrRole(db, entities.Ticket{}, "admin"), ticketService.DeleteTicket)
 
 		// Payment management (authenticated users)
 		protected.POST("/payments", paymentService.BuyTicketHandler)
 		protected.GET("/payments/:id", paymentService.GetPaymentHandler)
+
 	}
 
 	engine.Run(":8080")

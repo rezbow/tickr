@@ -10,6 +10,7 @@ import (
 type Ticket struct {
 	ID                  uuid.UUID
 	EventId             uuid.UUID
+	UserId              uuid.UUID
 	Price               int64
 	TotalQuantities     int
 	RemainingQuantities int

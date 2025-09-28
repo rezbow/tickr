@@ -23,12 +23,19 @@ func (service *EventsService) CreateEventHandler(c *gin.Context) {
 		return
 	}
 
+	userIdAny, _ := c.Get("user_id")
+
+	userId, ok := userIdAny.(uuid.UUID)
+	if !ok {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid user id "})
+	}
+
 	event := &entities.Event{
 		Title:     input.Title,
 		Venue:     input.Venue,
 		StartTime: input.StartTime,
 		EndTime:   input.EndTime,
-		UserId:    input.UserId,
+		UserId:    userId,
 	}
 	if input.Description != nil {
 		event.Description.Valid = true

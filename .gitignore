@@ -1,4 +1,4 @@
 design.md
 .env
 go.sum
-api
+/api

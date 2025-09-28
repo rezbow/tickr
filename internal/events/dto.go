@@ -20,7 +20,6 @@ type EventCreateDTO struct {
 	Title       string    `json:"title" binding:"required"`
 	Description *string   `json:"description"`
 	Venue       string    `json:"venue" binding:"required"`
-	UserId      uuid.UUID `json:"user_id" binding:"required"`
 	StartTime   time.Time `json:"start_time" binding:"required"`
 	EndTime     time.Time `json:"end_time" binding:"required"`
 }

@@ -271,14 +271,14 @@ func (service *UsersService) LogoutHandler(c *gin.Context) {
 	var logoutInput struct {
 		RefreshToken string `json:"refresh_token"`
 	}
-	
+
 	if err := c.ShouldBindJSON(&logoutInput); err == nil && logoutInput.RefreshToken != "" {
 		// Invalidate the refresh token
 		if err := service.refreshTokenService.DeleteRefreshToken(logoutInput.RefreshToken); err != nil {
 			service.logger.Error("failed to delete refresh token", "error", err)
 		}
 	}
-	
+
 	userID, exists := c.Get("user_id")
 	if exists {
 		// Delete all refresh tokens for this user
@@ -289,7 +289,7 @@ func (service *UsersService) LogoutHandler(c *gin.Context) {
 		}
 		service.logger.Info("user logged out", "userId", userID)
 	}
-	
+
 	c.JSON(http.StatusOK, gin.H{"message": "Logged out successfully"})
 }
 

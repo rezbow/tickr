@@ -9,6 +9,14 @@ import (
 	"gorm.io/gorm"
 )
 
+func (svc *TicketsService) getEvent(eventId uuid.UUID) (*entities.Event, error) {
+	var event entities.Event
+	if err := svc.db.Where("id = ?", eventId).First(&event).Error; err != nil {
+		return nil, err
+	}
+	return &event, nil
+}
+
 func (service *TicketsService) createTicket(ctx context.Context, ticket *entities.Ticket) error {
 	ticket.ID = uuid.New()
 	err := gorm.G[entities.Ticket](service.db).Create(ctx, ticket)
@@ -42,8 +50,8 @@ func (service *TicketsService) getEventTickets(ctx context.Context, eventId uuid
 	if res := service.db.Model(&entities.Ticket{}).Where("event_id = ?", eventId).Count(&total); res.Error != nil {
 		return nil, 0, res.Error
 	}
-    var tickets []entities.Ticket
-    err := service.db.Scopes(p.Paginate).Where("event_id = ?", eventId).Find(&tickets).Error
+	var tickets []entities.Ticket
+	err := service.db.Scopes(p.Paginate).Where("event_id = ?", eventId).Find(&tickets).Error
 	if err != nil {
 		return nil, 0, err
 	}

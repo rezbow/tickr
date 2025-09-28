@@ -11,35 +11,66 @@ import (
 	"gorm.io/gorm"
 )
 
-func (service *TicketsService) CreateTicket(c *gin.Context) {
-	var input TicketInput
+func (service *TicketsService) CreateTicketHandler(c *gin.Context) {
+	var input TicketCreateDTO
 	if err := c.ShouldBindJSON(&input); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-
 	if errors := input.Validate(); errors != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"errors": errors})
 		return
 	}
 
+	userIdAny, _ := c.Get("user_id")
+	userId, ok := userIdAny.(uuid.UUID)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid user ID"})
+		return
+	}
+
+	eventIdStr := c.Param("id")
+	eventId, err := uuid.Parse(eventIdStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"errors": err.Error()})
+		return
+	}
+
+	event, err := service.getEvent(eventId)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"errors": "event not found"})
+			return
+		}
+		service.logger.Error("failed to get event", "error", err.Error())
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+		return
+
+	}
+
+	if event.UserId != userId {
+		c.JSON(http.StatusForbidden, gin.H{"error": "don't have permission"})
+		return
+	}
+
 	ticket := entities.Ticket{
-		EventId:         input.EventId,
-		Price:           input.Price,
-		TotalQuantities: input.TotalQuantities,
+		EventId:             eventId,
+		UserId:              userId,
+		Price:               input.Price,
+		TotalQuantities:     input.TotalQuantities,
 		RemainingQuantities: input.TotalQuantities,
 	}
 
 	if err := service.createTicket(c.Request.Context(), &ticket); err != nil {
 		if errors.Is(err, gorm.ErrForeignKeyViolated) {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid event ID"})
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid event or user ID"})
 			return
 		}
 		service.logger.Error("failed to create ticket", "error", err.Error())
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
 		return
 	}
-	c.JSON(http.StatusCreated, gin.H{"message": "ticket created"})
+	c.JSON(http.StatusCreated, TicketEntityToTicket(&ticket))
 }
 
 func (service *TicketsService) GetTicket(c *gin.Context) {

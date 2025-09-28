@@ -6,9 +6,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
-	"github.com/rezbow/tickr/internal/entities"
 	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
 )
 
 func (service *PaymentService) GetPaymentHandler(c *gin.Context) {
@@ -33,7 +31,6 @@ func (service *PaymentService) GetPaymentHandler(c *gin.Context) {
 }
 
 func (service *PaymentService) BuyTicketHandler(c *gin.Context) {
-	ErrInsuffcientQuantity := errors.New("insufficient quantities")
 	var paymentDetail PaymentDetail
 	if err := c.ShouldBindJSON(&paymentDetail); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -44,35 +41,7 @@ func (service *PaymentService) BuyTicketHandler(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"errors": errors})
 		return
 	}
-	var paymentId uuid.UUID
-	err := service.db.Transaction(func(tx *gorm.DB) error {
-		var ticket entities.Ticket
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ?", paymentDetail.TicketId).First(&ticket).Error; err != nil {
-			return err
-		}
-
-		if ticket.RemainingQuantities == 0 || ticket.RemainingQuantities < paymentDetail.Quantity {
-			return ErrInsuffcientQuantity
-		}
-
-		ticket.RemainingQuantities -= paymentDetail.Quantity
-		if err := tx.Save(&ticket).Error; err != nil {
-			return err
-		}
-
-        payment := entities.Payment{
-			ID:         uuid.New(),
-			UserId:     paymentDetail.UserId,
-			TicketId:   paymentDetail.TicketId,
-			Quantity:   paymentDetail.Quantity,
-			PaidAmount: int64(paymentDetail.Quantity) * ticket.Price,
-		}
-		if err := tx.Create(&payment).Error; err != nil {
-			return err
-		}
-		paymentId = payment.ID
-		return nil
-	})
+	payment, err := service.createPayment(paymentDetail)
 	if err != nil {
 		switch err {
 		case gorm.ErrRecordNotFound:
@@ -88,5 +57,5 @@ func (service *PaymentService) BuyTicketHandler(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusCreated, gin.H{"payment_id": paymentId, "message": "payment successful"})
+	c.JSON(http.StatusCreated, PaymentEntityToPayment(*payment))
 }

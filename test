@@ -1,0 +1,592 @@
+diff --git a/.gitignore b/.gitignore
+index 799b06d..591f4f1 100644
+--- a/.gitignore
++++ b/.gitignore
+@@ -1,4 +1,4 @@
+ design.md
+ .env
+ go.sum
+-api
++/api
+diff --git a/cmd/api/main.go b/cmd/api/main.go
+index 8d61ee0..58e774e 100644
+--- a/cmd/api/main.go
++++ b/cmd/api/main.go
+@@ -8,6 +8,7 @@ import (
+ 	"github.com/joho/godotenv"
+ 	"github.com/rezbow/tickr/internal/auth"
+ 	"github.com/rezbow/tickr/internal/database"
++	"github.com/rezbow/tickr/internal/entities"
+ 	"github.com/rezbow/tickr/internal/events"
+ 	"github.com/rezbow/tickr/internal/payment"
+ 	"github.com/rezbow/tickr/internal/tickets"
+@@ -59,15 +60,16 @@ func main() {
+ 
+ 		// Event management (organizers and admins)
+ 		protected.POST("/events", auth.RequireRoles([]string{"organizer", "admin"}), eventsService.CreateEventHandler)
+-		protected.DELETE("/events/:id", auth.RequireOwnershipOrRole("admin"), eventsService.DeleteEventHandler)
++		protected.DELETE("/events/:id", auth.RequireEntityOwnershipOrRole(db, entities.Event{}, "admin"), eventsService.DeleteEventHandler)
++		protected.POST("/events/:id/tickets", auth.RequireEntityOwnershipOrRole(db, entities.Event{}, "admin"), ticketService.CreateTicketHandler)
+ 
+ 		// Ticket management (organizers and admins)
+-		protected.POST("/tickets", auth.RequireRoles([]string{"organizer", "admin"}), ticketService.CreateTicket)
+-		protected.DELETE("/tickets/:id", auth.RequireRoles([]string{"organizer", "admin"}), ticketService.DeleteTicket)
++		protected.DELETE("/tickets/:id", auth.RequireEntityOwnershipOrRole(db, entities.Ticket{}, "admin"), ticketService.DeleteTicket)
+ 
+ 		// Payment management (authenticated users)
+ 		protected.POST("/payments", paymentService.BuyTicketHandler)
+ 		protected.GET("/payments/:id", paymentService.GetPaymentHandler)
++
+ 	}
+ 
+ 	engine.Run(":8080")
+diff --git a/internal/auth/middleware.go b/internal/auth/middleware.go
+index 3c725dc..a47cd12 100644
+--- a/internal/auth/middleware.go
++++ b/internal/auth/middleware.go
+@@ -1,11 +1,13 @@
+ package auth
+ 
+ import (
++	"errors"
+ 	"net/http"
+ 	"strings"
+ 
+ 	"github.com/gin-gonic/gin"
+ 	"github.com/google/uuid"
++	"gorm.io/gorm"
+ )
+ 
+ func AuthMiddleware(jwtService *JWTService) gin.HandlerFunc {
+@@ -114,6 +116,82 @@ func RequireRoles(requiredRoles []string) gin.HandlerFunc {
+ 	}
+ }
+ 
++func RequireEntityOwnershipOrRole(db *gorm.DB, entity any, requiredRole string) gin.HandlerFunc {
++	return func(c *gin.Context) {
++		userID, exists := c.Get("user_id")
++		if !exists {
++			c.JSON(http.StatusUnauthorized, gin.H{"error": "User ID not found"})
++			c.Abort()
++			return
++		}
++
++		userRole, exists := c.Get("user_role")
++		if !exists {
++			c.JSON(http.StatusUnauthorized, gin.H{"error": "User role not found"})
++			c.Abort()
++			return
++		}
++
++		role, ok := userRole.(string)
++		if !ok {
++			c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid user role"})
++			c.Abort()
++			return
++		}
++
++		// If user has required role, allow access
++		if hasRequiredRole(role, requiredRole) {
++			c.Next()
++			return
++		}
++
++		// Otherwise, check ownership
++		resourceID := c.Param("id")
++		if resourceID == "" {
++			c.JSON(http.StatusBadRequest, gin.H{"error": "Resource ID required"})
++			c.Abort()
++			return
++		}
++
++		resourceUUID, err := uuid.Parse(resourceID)
++		if err != nil {
++			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid resource ID"})
++			c.Abort()
++			return
++		}
++
++		userUUID, ok := userID.(uuid.UUID)
++		if !ok {
++			c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid user ID"})
++			c.Abort()
++			return
++		}
++
++		var entityOwner struct {
++			UserId uuid.UUID
++		}
++		if err := db.Model(entity).Select("user_id").Where("id = ?", resourceUUID).First(&entityOwner).Error; err != nil {
++			if errors.Is(err, gorm.ErrRecordNotFound) {
++				c.JSON(http.StatusNotFound, gin.H{"error": "not found"})
++				c.Abort()
++				return
++			}
++			c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
++			c.Abort()
++			return
++		}
++
++		// Check if user owns the resource
++		if userUUID != entityOwner.UserId {
++			c.JSON(http.StatusForbidden, gin.H{"error": "Access denied: not resource owner"})
++			c.Abort()
++			return
++		}
++
++		c.Next()
++	}
++}
++
+ func RequireOwnershipOrRole(requiredRole string) gin.HandlerFunc {
+ 	return func(c *gin.Context) {
+ 		userID, exists := c.Get("user_id")
+@@ -194,4 +272,3 @@ func hasRequiredRole(userRole, requiredRole string) bool {
+ 
+ 	return userLevel >= requiredLevel
+ }
+-
+diff --git a/internal/entities/payment.go b/internal/entities/payment.go
+index db5127e..083b57b 100644
+--- a/internal/entities/payment.go
++++ b/internal/entities/payment.go
+@@ -6,12 +6,19 @@ import (
+ 	"github.com/google/uuid"
+ )
+ 
++var (
++	PaymentPending   = "pending"
++	PaymentConfirmed = "confirmed"
++	PaymentCanceled  = "canceled"
++)
++
+ type Payment struct {
+ 	ID         uuid.UUID
+ 	UserId     uuid.UUID
+ 	TicketId   uuid.UUID
+ 	Quantity   int
+-    PaidAmount int64
++	PaidAmount int64
++	Status     string
+ 	CreatedAt  time.Time
+ 	UpdatedAt  time.Time
+ 	// associations
+diff --git a/internal/entities/ticket.go b/internal/entities/ticket.go
+index 3d6ef7f..881118f 100644
+--- a/internal/entities/ticket.go
++++ b/internal/entities/ticket.go
+@@ -10,6 +10,7 @@ import (
+ type Ticket struct {
+ 	ID                  uuid.UUID
+ 	EventId             uuid.UUID
++	UserId              uuid.UUID
+ 	Price               int64
+ 	TotalQuantities     int
+ 	RemainingQuantities int
+diff --git a/internal/events/dto.go b/internal/events/dto.go
+index ba8bffd..f05d0e5 100644
+--- a/internal/events/dto.go
++++ b/internal/events/dto.go
+@@ -20,7 +20,6 @@ type EventCreateDTO struct {
+ 	Title       string    `json:"title" binding:"required"`
+ 	Description *string   `json:"description"`
+ 	Venue       string    `json:"venue" binding:"required"`
+-	UserId      uuid.UUID `json:"user_id" binding:"required"`
+ 	StartTime   time.Time `json:"start_time" binding:"required"`
+ 	EndTime     time.Time `json:"end_time" binding:"required"`
+ }
+diff --git a/internal/events/handler.go b/internal/events/handler.go
+index e97e625..dfa2412 100644
+--- a/internal/events/handler.go
++++ b/internal/events/handler.go
+@@ -23,12 +23,19 @@ func (service *EventsService) CreateEventHandler(c *gin.Context) {
+ 		return
+ 	}
+ 
++	userIdAny, _ := c.Get("user_id")
++
++	userId, ok := userIdAny.(uuid.UUID)
++	if !ok {
++		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid user id "})
++	}
++
+ 	event := &entities.Event{
+ 		Title:     input.Title,
+ 		Venue:     input.Venue,
+ 		StartTime: input.StartTime,
+ 		EndTime:   input.EndTime,
+-		UserId:    input.UserId,
++		UserId:    userId,
+ 	}
+ 	if input.Description != nil {
+ 		event.Description.Valid = true
+diff --git a/internal/payment/handler.go b/internal/payment/handler.go
+index 6ce09ff..1156ceb 100644
+--- a/internal/payment/handler.go
++++ b/internal/payment/handler.go
+@@ -6,9 +6,7 @@ import (
+ 
+ 	"github.com/gin-gonic/gin"
+ 	"github.com/google/uuid"
+-	"github.com/rezbow/tickr/internal/entities"
+ 	"gorm.io/gorm"
+-	"gorm.io/gorm/clause"
+ )
+ 
+ func (service *PaymentService) GetPaymentHandler(c *gin.Context) {
+@@ -33,7 +31,6 @@ func (service *PaymentService) GetPaymentHandler(c *gin.Context) {
+ }
+ 
+ func (service *PaymentService) BuyTicketHandler(c *gin.Context) {
+-	ErrInsuffcientQuantity := errors.New("insufficient quantities")
+ 	var paymentDetail PaymentDetail
+ 	if err := c.ShouldBindJSON(&paymentDetail); err != nil {
+ 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+@@ -44,35 +41,7 @@ func (service *PaymentService) BuyTicketHandler(c *gin.Context) {
+ 		c.JSON(http.StatusBadRequest, gin.H{"errors": errors})
+ 		return
+ 	}
+-	var paymentId uuid.UUID
+-	err := service.db.Transaction(func(tx *gorm.DB) error {
+-		var ticket entities.Ticket
+-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ?", paymentDetail.TicketId).First(&ticket).Error; err != nil {
+-			return err
+-		}
+-
+-		if ticket.RemainingQuantities == 0 || ticket.RemainingQuantities < paymentDetail.Quantity {
+-			return ErrInsuffcientQuantity
+-		}
+-
+-		ticket.RemainingQuantities -= paymentDetail.Quantity
+-		if err := tx.Save(&ticket).Error; err != nil {
+-			return err
+-		}
+-
+-        payment := entities.Payment{
+-			ID:         uuid.New(),
+-			UserId:     paymentDetail.UserId,
+-			TicketId:   paymentDetail.TicketId,
+-			Quantity:   paymentDetail.Quantity,
+-			PaidAmount: int64(paymentDetail.Quantity) * ticket.Price,
+-		}
+-		if err := tx.Create(&payment).Error; err != nil {
+-			return err
+-		}
+-		paymentId = payment.ID
+-		return nil
+-	})
++	payment, err := service.createPayment(paymentDetail)
+ 	if err != nil {
+ 		switch err {
+ 		case gorm.ErrRecordNotFound:
+@@ -88,5 +57,5 @@ func (service *PaymentService) BuyTicketHandler(c *gin.Context) {
+ 		return
+ 	}
+ 
+-	c.JSON(http.StatusCreated, gin.H{"payment_id": paymentId, "message": "payment successful"})
++	c.JSON(http.StatusCreated, PaymentEntityToPayment(*payment))
+ }
+diff --git a/internal/payment/repo.go b/internal/payment/repo.go
+index ac7f365..be2a445 100644
+--- a/internal/payment/repo.go
++++ b/internal/payment/repo.go
+@@ -8,14 +8,6 @@ import (
+ 	"gorm.io/gorm"
+ )
+ 
+-func (service *PaymentService) createPayment(ctx context.Context, payment *entities.Payment) error {
+-	err := gorm.G[entities.Payment](service.db).Create(ctx, payment)
+-	if err != nil {
+-		return err
+-	}
+-	return nil
+-}
+-
+ func (service *PaymentService) getPayment(ctx context.Context, paymentId uuid.UUID) (*entities.Payment, error) {
+ 	payment, err := gorm.G[entities.Payment](service.db).Where("id = ?", paymentId).First(ctx)
+ 	if err != nil {
+diff --git a/internal/payment/service.go b/internal/payment/service.go
+index 4c3de87..6d62328 100644
+--- a/internal/payment/service.go
++++ b/internal/payment/service.go
+@@ -1,11 +1,17 @@
+ package payment
+ 
+ import (
++	"errors"
+ 	"log/slog"
+ 
++	"github.com/google/uuid"
++	"github.com/rezbow/tickr/internal/entities"
+ 	"gorm.io/gorm"
++	"gorm.io/gorm/clause"
+ )
+ 
++var ErrInsuffcientQuantity = errors.New("insufficient quantities")
++
+ type PaymentService struct {
+ 	db     *gorm.DB
+ 	logger *slog.Logger
+@@ -14,3 +20,40 @@ type PaymentService struct {
+ func NewPaymentService(db *gorm.DB, logger *slog.Logger) *PaymentService {
+ 	return &PaymentService{db: db, logger: logger}
+ }
++
++func (svc *PaymentService) createPayment(p PaymentDetail) (*entities.Payment, error) {
++	var payment entities.Payment
++	err := svc.db.Transaction(func(tx *gorm.DB) error {
++		var ticket entities.Ticket
++		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ?", p.TicketId).First(&ticket).Error; err != nil {
++			return err
++		}
++
++		if ticket.RemainingQuantities == 0 || ticket.RemainingQuantities < p.Quantity {
++			return ErrInsuffcientQuantity
++		}
++
++		ticket.RemainingQuantities -= p.Quantity
++		if err := tx.Save(&ticket).Error; err != nil {
++			return err
++		}
++
++		payment := entities.Payment{
++			ID:         uuid.New(),
++			UserId:     p.UserId,
++			TicketId:   p.TicketId,
++			Quantity:   p.Quantity,
++			Status:     entities.PaymentConfirmed,
++			PaidAmount: int64(p.Quantity) * ticket.Price,
++		}
++		if err := tx.Create(&payment).Error; err != nil {
++			return err
++		}
++
++		if err := tx.Where("id = ?", payment.ID).First(&payment).Error; err != nil {
++			return err
++		}
++		return nil
++	})
++	return &payment, err
++}
+diff --git a/internal/tickets/data.go b/internal/tickets/data.go
+deleted file mode 100644
+index 6a99141..0000000
+--- a/internal/tickets/data.go
++++ /dev/null
+@@ -1,41 +0,0 @@
+-package tickets
+-
+-import (
+-	"github.com/google/uuid"
+-	"github.com/rezbow/tickr/internal/entities"
+-	"github.com/rezbow/tickr/internal/utils"
+-)
+-
+-type TicketInput struct {
+-	EventId         uuid.UUID `json:"event_id" binding:"required"`
+-	Price           int64       `json:"price" binding:"required"`
+-	TotalQuantities int       `json:"total_quantities" binding:"required"`
+-}
+-
+-type Ticket struct {
+-	ID                 uuid.UUID `json:"id"`
+-	EventId            uuid.UUID `json:"event_id"`
+-	Price              int64       `json:"price"`
+-    TotalQuantities    int       `json:"total_quantities"`
+-    RemainingQuantities int      `json:"remaining_quantities"`
+-}
+-
+-func TicketEntityToTicket(t *entities.Ticket) Ticket {
+-	return Ticket{
+-		ID:                 t.ID,
+-		EventId:            t.EventId,
+-		Price:              t.Price,
+-        TotalQuantities:    t.TotalQuantities,
+-        RemainingQuantities: t.RemainingQuantities,
+-	}
+-}
+-
+-func (t *TicketInput) Validate() utils.ValidationErrors {
+-	v := utils.NewValidator()
+-	v.Must(t.Price > 0, "price", "must be positive integer")
+-	v.Must(t.TotalQuantities > 0, "total_quantities", "must be positive integer")
+-	if !v.Valid() {
+-		return v.Errors
+-	}
+-	return nil
+-}
+diff --git a/internal/tickets/handler.go b/internal/tickets/handler.go
+index da8b10e..eb7f8ce 100644
+--- a/internal/tickets/handler.go
++++ b/internal/tickets/handler.go
+@@ -11,35 +11,66 @@ import (
+ 	"gorm.io/gorm"
+ )
+ 
+-func (service *TicketsService) CreateTicket(c *gin.Context) {
+-	var input TicketInput
++func (service *TicketsService) CreateTicketHandler(c *gin.Context) {
++	var input TicketCreateDTO
+ 	if err := c.ShouldBindJSON(&input); err != nil {
+ 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+ 		return
+ 	}
+-
+ 	if errors := input.Validate(); errors != nil {
+ 		c.JSON(http.StatusBadRequest, gin.H{"errors": errors})
+ 		return
+ 	}
+ 
++	userIdAny, _ := c.Get("user_id")
++	userId, ok := userIdAny.(uuid.UUID)
++	if !ok {
++		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid user ID"})
++		return
++	}
++
++	eventIdStr := c.Param("id")
++	eventId, err := uuid.Parse(eventIdStr)
++	if err != nil {
++		c.JSON(http.StatusBadRequest, gin.H{"errors": err.Error()})
++		return
++	}
++
++	event, err := service.getEvent(eventId)
++	if err != nil {
++		if errors.Is(err, gorm.ErrRecordNotFound) {
++			c.JSON(http.StatusNotFound, gin.H{"errors": "event not found"})
++			return
++		}
++		service.logger.Error("failed to get event", "error", err.Error())
++		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
++		return
++
++	}
++
++	if event.UserId != userId {
++		c.JSON(http.StatusForbidden, gin.H{"error": "don't have permission"})
++		return
++	}
++
+ 	ticket := entities.Ticket{
+-		EventId:         input.EventId,
+-		Price:           input.Price,
+-		TotalQuantities: input.TotalQuantities,
++		EventId:             eventId,
++		UserId:              userId,
++		Price:               input.Price,
++		TotalQuantities:     input.TotalQuantities,
+ 		RemainingQuantities: input.TotalQuantities,
+ 	}
+ 
+ 	if err := service.createTicket(c.Request.Context(), &ticket); err != nil {
+ 		if errors.Is(err, gorm.ErrForeignKeyViolated) {
+-			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid event ID"})
++			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid event or user ID"})
+ 			return
+ 		}
+ 		service.logger.Error("failed to create ticket", "error", err.Error())
+-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
++		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+ 		return
+ 	}
+-	c.JSON(http.StatusCreated, gin.H{"message": "ticket created"})
++	c.JSON(http.StatusCreated, TicketEntityToTicket(&ticket))
+ }
+ 
+ func (service *TicketsService) GetTicket(c *gin.Context) {
+diff --git a/internal/tickets/repo.go b/internal/tickets/repo.go
+index 14e3b4c..be7170d 100644
+--- a/internal/tickets/repo.go
++++ b/internal/tickets/repo.go
+@@ -9,6 +9,14 @@ import (
+ 	"gorm.io/gorm"
+ )
+ 
++func (svc *TicketsService) getEvent(eventId uuid.UUID) (*entities.Event, error) {
++	var event entities.Event
++	if err := svc.db.Where("id = ?", eventId).First(&event).Error; err != nil {
++		return nil, err
++	}
++	return &event, nil
++}
++
+ func (service *TicketsService) createTicket(ctx context.Context, ticket *entities.Ticket) error {
+ 	ticket.ID = uuid.New()
+ 	err := gorm.G[entities.Ticket](service.db).Create(ctx, ticket)
+@@ -42,8 +50,8 @@ func (service *TicketsService) getEventTickets(ctx context.Context, eventId uuid
+ 	if res := service.db.Model(&entities.Ticket{}).Where("event_id = ?", eventId).Count(&total); res.Error != nil {
+ 		return nil, 0, res.Error
+ 	}
+-    var tickets []entities.Ticket
+-    err := service.db.Scopes(p.Paginate).Where("event_id = ?", eventId).Find(&tickets).Error
++	var tickets []entities.Ticket
++	err := service.db.Scopes(p.Paginate).Where("event_id = ?", eventId).Find(&tickets).Error
+ 	if err != nil {
+ 		return nil, 0, err
+ 	}
+diff --git a/internal/users/handler.go b/internal/users/handler.go
+index 541662d..8353d38 100644
+--- a/internal/users/handler.go
++++ b/internal/users/handler.go
+@@ -271,14 +271,14 @@ func (service *UsersService) LogoutHandler(c *gin.Context) {
+ 	var logoutInput struct {
+ 		RefreshToken string `json:"refresh_token"`
+ 	}
+-	
++
+ 	if err := c.ShouldBindJSON(&logoutInput); err == nil && logoutInput.RefreshToken != "" {
+ 		// Invalidate the refresh token
+ 		if err := service.refreshTokenService.DeleteRefreshToken(logoutInput.RefreshToken); err != nil {
+ 			service.logger.Error("failed to delete refresh token", "error", err)
+ 		}
+ 	}
+-	
++
+ 	userID, exists := c.Get("user_id")
+ 	if exists {
+ 		// Delete all refresh tokens for this user
+@@ -289,7 +289,7 @@ func (service *UsersService) LogoutHandler(c *gin.Context) {
+ 		}
+ 		service.logger.Info("user logged out", "userId", userID)
+ 	}
+-	
++
+ 	c.JSON(http.StatusOK, gin.H{"message": "Logged out successfully"})
+ }
+ 
+diff --git a/migrations/003_tickets_table.sql b/migrations/003_tickets_table.sql
+index b50eb9a..1631009 100644
+--- a/migrations/003_tickets_table.sql
++++ b/migrations/003_tickets_table.sql
+@@ -3,9 +3,10 @@
+ CREATE TABLE tickets (
+ 	id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+ 	event_id UUID REFERENCES events(id) ON DELETE CASCADE,
++	user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+ 	price BIGINT NOT NULL,
+-    total_quantities INT NOT NULL,
+-    remaining_quantities INT NOT NULL,
++	total_quantities INT NOT NULL,
++	remaining_quantities INT NOT NULL,
+ 	created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+ 	updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+ );
+diff --git a/migrations/004_payment_table.sql b/migrations/004_payment_table.sql
+index 482f6a6..6c10c1e 100644
+--- a/migrations/004_payment_table.sql
++++ b/migrations/004_payment_table.sql
+@@ -1,10 +1,11 @@
+ -- +goose Up
+-CREATE TABLE payment (
++CREATE TABLE payment(
+ 	id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+ 	user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+ 	ticket_id UUID REFERENCES tickets(id) ON DELETE CASCADE,
+ 	quantity INT NOT NULL,
+-    paid_amount BIGINT NOT NULL,
++    	paid_amount BIGINT NOT NULL,
++	status VARCHAR(20) NOT NULL DEFAULT 'pending',
+ 	created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+ 	updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+ );
